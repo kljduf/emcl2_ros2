@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // CAUTION: Some lines came from amcl (LGPL).
 
-#include "emcl2/emcl2_node.h"
+#include "emcl2/emcl2_autonode.h"
 
 #include "emcl2/LikelihoodFieldMap.h"
 #include "emcl2/OdomModel.h"
@@ -77,6 +77,8 @@ void EMcl2Node::declareParameter()
 	this->declare_parameter("odom_rot_dev_per_rot", 0.2);
 
 	this->declare_parameter("laser_likelihood_max_dist", 0.2);
+
+	this->declare_parameter("autoEND", 0.9);
 }
 
 void EMcl2Node::initCommunication(void)
@@ -84,6 +86,8 @@ void EMcl2Node::initCommunication(void)
 	particlecloud_pub_ = create_publisher<geometry_msgs::msg::PoseArray>("particlecloud", 2);
 	pose_pub_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("mcl_pose", 2);
 	alpha_pub_ = create_publisher<std_msgs::msg::Float32>("alpha", 2);
+	final_transform_pub_ = create_publisher<geometry_msgs::msg::TransformStamped>(
+	  "final_map_to_odom_transform", rclcpp::QoS(1).transient_local().reliable());
 
 	laser_scan_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
 	  "rplidar_a2/scan", 2, std::bind(&EMcl2Node::cbScan, this, std::placeholders::_1));
@@ -106,6 +110,9 @@ void EMcl2Node::initCommunication(void)
 	this->get_parameter("odom_freq", odom_freq_);
 
 	this->get_parameter("transform_tolerance", transform_tolerance_);
+
+	this->get_parameter("autoEND", auto_end_threshold_);
+	alpha_above_threshold_ = false;
 }
 
 void EMcl2Node::initTF(void)
@@ -265,6 +272,41 @@ void EMcl2Node::loop(void)
 		std_msgs::msg::Float32 alpha_msg;
 		alpha_msg.data = static_cast<float>(pf_->alpha_);
 		alpha_pub_->publish(alpha_msg);
+
+		// Auto exit logic: check if alpha is above threshold for 3 seconds
+		if (pf_->alpha_ > auto_end_threshold_) {
+			if (!alpha_above_threshold_) {
+				alpha_above_threshold_ = true;
+				alpha_above_threshold_start_time_ = ros_clock_.now();
+				RCLCPP_INFO(get_logger(), "Alpha (%.3f) exceeded threshold (%.3f), starting timer.",
+				            pf_->alpha_, auto_end_threshold_);
+			} else {
+				double elapsed = (ros_clock_.now() - alpha_above_threshold_start_time_).seconds();
+				if (elapsed >= AUTO_EXIT_DURATION_) {
+					RCLCPP_INFO(get_logger(),
+					            "Alpha has been above threshold for %.1f seconds. Auto exiting node.",
+					            elapsed);
+					
+					// Publish final map->odom transform before exiting
+					geometry_msgs::msg::TransformStamped final_tf;
+					final_tf.header.frame_id = global_frame_id_;
+					final_tf.header.stamp = ros_clock_.now();
+					final_tf.child_frame_id = odom_frame_id_;
+					tf2::convert(latest_tf_.inverse(), final_tf.transform);
+					final_transform_pub_->publish(final_tf);
+					RCLCPP_INFO(get_logger(), "Published final map->odom transform.");
+
+					// rclcpp::shutdown();
+					// return;
+				}
+			}
+		} else {
+			if (alpha_above_threshold_) {
+				RCLCPP_INFO(get_logger(), "Alpha (%.3f) dropped below threshold (%.3f), resetting timer.",
+				            pf_->alpha_, auto_end_threshold_);
+			}
+			alpha_above_threshold_ = false;
+		}
 	} else {
 		if (!scan_receive_) {
 			RCLCPP_WARN(

@@ -24,6 +24,17 @@ ament_auto_add_executable(emcl2_node
   src/emcl2_node.cpp
 )
 
+ament_auto_add_executable(emcl2_autonode
+  src/Mcl.cpp
+  src/ExpResetMcl2.cpp
+  src/Particle.cpp
+  src/OdomModel.cpp
+  src/Pose.cpp
+  src/Scan.cpp
+  src/LikelihoodFieldMap.cpp
+  src/emcl2_autonode.cpp
+)
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
