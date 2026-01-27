@@ -90,7 +90,7 @@ void EMcl2Node::initCommunication(void)
 	  "final_map_to_odom_transform", rclcpp::QoS(1).transient_local().reliable());
 
 	laser_scan_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
-	  "rplidar_a2/scan", 2, std::bind(&EMcl2Node::cbScan, this, std::placeholders::_1));
+	  "obstacle_scan", rclcpp::SensorDataQoS(), std::bind(&EMcl2Node::cbScan, this, std::placeholders::_1));
 	initial_pose_sub_ = create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
 	  "initialpose", 2,
 	  std::bind(&EMcl2Node::initialPoseReceived, this, std::placeholders::_1));

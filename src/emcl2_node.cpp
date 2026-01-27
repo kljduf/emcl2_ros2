@@ -85,8 +85,10 @@ void EMcl2Node::initCommunication(void)
 	pose_pub_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("mcl_pose", 2);
 	alpha_pub_ = create_publisher<std_msgs::msg::Float32>("alpha", 2);
 
+	// laser_scan_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
+	//   "obstacle_scan", 2, std::bind(&EMcl2Node::cbScan, this, std::placeholders::_1));
 	laser_scan_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
-	  "rplidar_a2/scan", 2, std::bind(&EMcl2Node::cbScan, this, std::placeholders::_1));
+	  "obstacle_scan", rclcpp::SensorDataQoS(), std::bind(&EMcl2Node::cbScan, this, std::placeholders::_1));
 	initial_pose_sub_ = create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
 	  "initialpose", 2,
 	  std::bind(&EMcl2Node::initialPoseReceived, this, std::placeholders::_1));
