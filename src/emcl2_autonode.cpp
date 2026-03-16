@@ -272,6 +272,15 @@ void EMcl2Node::loop(void)
 		std_msgs::msg::Float32 alpha_msg;
 		alpha_msg.data = static_cast<float>(pf_->alpha_);
 		alpha_pub_->publish(alpha_msg);
+		
+		// Publish final map->odom transform before exiting
+		geometry_msgs::msg::TransformStamped final_tf;
+		final_tf.header.frame_id = global_frame_id_;
+		final_tf.header.stamp = ros_clock_.now();
+		final_tf.child_frame_id = odom_frame_id_;
+		tf2::convert(latest_tf_.inverse(), final_tf.transform);
+		final_transform_pub_->publish(final_tf);
+					RCLCPP_INFO(get_logger(), "Published final map->odom transform.");
 
 		// Auto exit logic: check if alpha is above threshold for 3 seconds
 		if (pf_->alpha_ > auto_end_threshold_) {
@@ -287,14 +296,14 @@ void EMcl2Node::loop(void)
 					            "Alpha has been above threshold for %.1f seconds. Auto exiting node.",
 					            elapsed);
 					
-					// Publish final map->odom transform before exiting
-					geometry_msgs::msg::TransformStamped final_tf;
-					final_tf.header.frame_id = global_frame_id_;
-					final_tf.header.stamp = ros_clock_.now();
-					final_tf.child_frame_id = odom_frame_id_;
-					tf2::convert(latest_tf_.inverse(), final_tf.transform);
-					final_transform_pub_->publish(final_tf);
-					RCLCPP_INFO(get_logger(), "Published final map->odom transform.");
+					// // Publish final map->odom transform before exiting
+					// geometry_msgs::msg::TransformStamped final_tf;
+					// final_tf.header.frame_id = global_frame_id_;
+					// final_tf.header.stamp = ros_clock_.now();
+					// final_tf.child_frame_id = odom_frame_id_;
+					// tf2::convert(latest_tf_.inverse(), final_tf.transform);
+					// final_transform_pub_->publish(final_tf);
+					// RCLCPP_INFO(get_logger(), "Published final map->odom transform.");
 
 					// rclcpp::shutdown();
 					// return;
