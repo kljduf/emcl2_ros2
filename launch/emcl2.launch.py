@@ -45,7 +45,7 @@ def generate_launch_description():
                 name='emcl2',
                 package='emcl2',
                 executable='emcl2_autonode',
-                namespace='red_standard_robot1',
+                # namespace='red_standard_robot1',
                 parameters=[params_file],
                 remappings=[
                     ('/tf', 'tf'),
