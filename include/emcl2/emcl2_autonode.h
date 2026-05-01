@@ -14,14 +14,12 @@
 
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
-#include <geometry_msgs/msg/transform_stamped.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
 #include <std_msgs/msg/float32.hpp>
 #include <std_srvs/srv/empty.hpp>
 
 #include <tf2/LinearMath/Transform.h>
 #include <tf2_ros/buffer.h>
-#include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/transform_listener.h>
 
 #include <memory>
@@ -44,7 +42,6 @@ class EMcl2Node : public rclcpp::Node
 	rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr particlecloud_pub_;
 	rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_pub_;
 	rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr alpha_pub_;
-	rclcpp::Publisher<geometry_msgs::msg::TransformStamped>::SharedPtr final_transform_pub_;
 	rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr laser_scan_sub_;
 	rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr
 	  initial_pose_sub_;
@@ -60,11 +57,8 @@ class EMcl2Node : public rclcpp::Node
 	std::string scan_frame_id_;
 	std::string base_frame_id_;
 
-	std::shared_ptr<tf2_ros::TransformBroadcaster> tfb_;
 	std::shared_ptr<tf2_ros::TransformListener> tfl_;
 	std::shared_ptr<tf2_ros::Buffer> tf_;
-
-	tf2::Transform latest_tf_;
 
 	rclcpp::Clock ros_clock_;
 
@@ -76,7 +70,6 @@ class EMcl2Node : public rclcpp::Node
 	bool scan_receive_;
 	bool map_receive_;
 	double init_x_, init_y_, init_t_;
-	double transform_tolerance_;
 
 	// auto exit parameters
 	double auto_end_threshold_;
@@ -87,7 +80,6 @@ class EMcl2Node : public rclcpp::Node
 	void publishPose(
 	  double x, double y, double t, double x_dev, double y_dev, double t_dev, double xy_cov,
 	  double yt_cov, double tx_cov);
-	void publishOdomFrame(double x, double y, double t);
 	void publishParticles(void);
 	bool getOdomPose(double & x, double & y, double & yaw);	 // same name is found in amcl
 	bool getLidarPose(double & x, double & y, double & yaw, bool & inv);

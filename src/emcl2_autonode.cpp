@@ -20,7 +20,6 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/create_timer_ros.h>
 #include <tf2_ros/message_filter.h>
-#include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/transform_listener.h>
 
 #include <memory>
@@ -34,6 +33,7 @@ EMcl2Node::EMcl2Node()
   ros_clock_(RCL_SYSTEM_TIME),
   init_pf_(false),
   init_request_(false),
+  initialpose_receive_(false),
   simple_reset_request_(false),
   scan_receive_(false),
   map_receive_(false)
@@ -86,8 +86,6 @@ void EMcl2Node::initCommunication(void)
 	particlecloud_pub_ = create_publisher<geometry_msgs::msg::PoseArray>("particlecloud", 2);
 	pose_pub_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("mcl_pose", 2);
 	alpha_pub_ = create_publisher<std_msgs::msg::Float32>("alpha", 2);
-	final_transform_pub_ = create_publisher<geometry_msgs::msg::TransformStamped>(
-	  "final_map_to_odom_transform", rclcpp::QoS(1).transient_local().reliable());
 
 	laser_scan_sub_ = create_subscription<sensor_msgs::msg::LaserScan>(
 	  "obstacle_scan", rclcpp::SensorDataQoS(), std::bind(&EMcl2Node::cbScan, this, std::placeholders::_1));
@@ -109,15 +107,12 @@ void EMcl2Node::initCommunication(void)
 
 	this->get_parameter("odom_freq", odom_freq_);
 
-	this->get_parameter("transform_tolerance", transform_tolerance_);
-
 	this->get_parameter("autoEND", auto_end_threshold_);
 	alpha_above_threshold_ = false;
 }
 
 void EMcl2Node::initTF(void)
 {
-	tfb_.reset();
 	tfl_.reset();
 	tf_.reset();
 
@@ -127,8 +122,6 @@ void EMcl2Node::initTF(void)
 	  create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive, false));
 	tf_->setCreateTimerInterface(timer_interface);
 	tfl_ = std::make_shared<tf2_ros::TransformListener>(*tf_);
-	tfb_ = std::make_shared<tf2_ros::TransformBroadcaster>(shared_from_this());
-	latest_tf_ = tf2::Transform::getIdentity();
 }
 
 void EMcl2Node::initPF(void)
@@ -265,22 +258,12 @@ void EMcl2Node::loop(void)
 		double x_var, y_var, t_var, xy_cov, yt_cov, tx_cov;
 		pf_->meanPose(x, y, t, x_var, y_var, t_var, xy_cov, yt_cov, tx_cov);
 
-		publishOdomFrame(x, y, t);
 		publishPose(x, y, t, x_var, y_var, t_var, xy_cov, yt_cov, tx_cov);
 		publishParticles();
 
 		std_msgs::msg::Float32 alpha_msg;
 		alpha_msg.data = static_cast<float>(pf_->alpha_);
 		alpha_pub_->publish(alpha_msg);
-		
-		// Publish final map->odom transform before exiting
-		geometry_msgs::msg::TransformStamped final_tf;
-		final_tf.header.frame_id = global_frame_id_;
-		final_tf.header.stamp = ros_clock_.now();
-		final_tf.child_frame_id = odom_frame_id_;
-		tf2::convert(latest_tf_.inverse(), final_tf.transform);
-		final_transform_pub_->publish(final_tf);
-					RCLCPP_INFO(get_logger(), "Published final map->odom transform.");
 
 		// Auto exit logic: check if alpha is above threshold for 3 seconds
 		if (pf_->alpha_ > auto_end_threshold_) {
@@ -296,15 +279,6 @@ void EMcl2Node::loop(void)
 					            "Alpha has been above threshold for %.1f seconds. Auto exiting node.",
 					            elapsed);
 					
-					// // Publish final map->odom transform before exiting
-					// geometry_msgs::msg::TransformStamped final_tf;
-					// final_tf.header.frame_id = global_frame_id_;
-					// final_tf.header.stamp = ros_clock_.now();
-					// final_tf.child_frame_id = odom_frame_id_;
-					// tf2::convert(latest_tf_.inverse(), final_tf.transform);
-					// final_transform_pub_->publish(final_tf);
-					// RCLCPP_INFO(get_logger(), "Published final map->odom transform.");
-
 					// rclcpp::shutdown();
 					// return;
 				}
@@ -336,7 +310,7 @@ void EMcl2Node::publishPose(
 {
 	geometry_msgs::msg::PoseWithCovarianceStamped p;
 	p.header.frame_id = global_frame_id_;
-	p.header.stamp = ros_clock_.now();
+	p.header.stamp = scan_time_stamp_;
 	p.pose.pose.position.x = x;
 	p.pose.pose.position.y = y;
 	p.pose.covariance[6 * 0 + 0] = x_dev;
@@ -354,37 +328,6 @@ void EMcl2Node::publishPose(
 	tf2::convert(q, p.pose.pose.orientation);
 
 	pose_pub_->publish(p);
-}
-
-void EMcl2Node::publishOdomFrame(double x, double y, double t)
-{
-	geometry_msgs::msg::PoseStamped odom_to_map;
-	try {
-		tf2::Quaternion q;
-		q.setRPY(0, 0, t);
-		tf2::Transform tmp_tf(q, tf2::Vector3(x, y, 0.0));
-
-		geometry_msgs::msg::PoseStamped tmp_tf_stamped;
-		tmp_tf_stamped.header.frame_id = footprint_frame_id_;
-		tmp_tf_stamped.header.stamp = scan_time_stamp_;
-		tf2::toMsg(tmp_tf.inverse(), tmp_tf_stamped.pose);
-
-		tf_->transform(tmp_tf_stamped, odom_to_map, odom_frame_id_);
-	} catch (tf2::TransformException & e) {
-		RCLCPP_DEBUG(get_logger(), "Failed to subtract base to odom transform");
-		return;
-	}
-	tf2::convert(odom_to_map.pose, latest_tf_);
-	auto stamp = tf2_ros::fromMsg(scan_time_stamp_);
-	tf2::TimePoint transform_expiration = stamp + tf2::durationFromSec(transform_tolerance_);
-
-	geometry_msgs::msg::TransformStamped tmp_tf_stamped;
-	tmp_tf_stamped.header.frame_id = global_frame_id_;
-	tmp_tf_stamped.header.stamp = tf2_ros::toMsg(transform_expiration);
-	tmp_tf_stamped.child_frame_id = odom_frame_id_;
-	tf2::convert(latest_tf_.inverse(), tmp_tf_stamped.transform);
-
-	tfb_->sendTransform(tmp_tf_stamped);
 }
 
 void EMcl2Node::publishParticles(void)

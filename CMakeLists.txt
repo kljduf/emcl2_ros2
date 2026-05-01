@@ -35,6 +35,10 @@ ament_auto_add_executable(emcl2_autonode
   src/emcl2_autonode.cpp
 )
 
+ament_auto_add_executable(emcl2_tf_publisher_node
+  src/emcl2_tf_publisher_node.cpp
+)
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
